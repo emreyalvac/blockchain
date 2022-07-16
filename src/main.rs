@@ -1,23 +1,29 @@
+use std::io;
 use crate::utils::{calculate_hash, hash_to_binary};
 use chrono::Utc;
+use serde::{Serialize, Deserialize};
 
 mod utils;
+mod p2p;
 
 const DIFFICULTY_PREFIX: &str = "00";
 
-#[derive(Debug)]
-struct App {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Chain {
     pub blocks: Vec<Block>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
     pub id: u64,
     pub hash: String,
     pub previous_hash: String,
     pub timestamp: i64,
     pub data: String,
-    pub nonce: u64,
+    // Proof of work
+    pub pow: u64,
+    // TODO: Transaction struct
+    transactions: Vec<String>,
 }
 
 impl Default for Block {
@@ -28,7 +34,8 @@ impl Default for Block {
             previous_hash: "".to_string(),
             timestamp: 0,
             data: "".to_string(),
-            nonce: 0,
+            pow: 0,
+            transactions: vec![],
         }
     }
 }
@@ -37,7 +44,7 @@ impl Block {
     fn new(id: u64, previous_hash: String, data: String) -> Self {
         let now = Utc::now();
 
-        let (nonce, hash) = Block::mine_block(id, now.timestamp(), previous_hash.as_str(), data.as_str());
+        let (pow, hash) = Block::mine_block(id, now.timestamp(), previous_hash.as_str(), data.as_str());
 
         Self {
             id,
@@ -45,30 +52,31 @@ impl Block {
             previous_hash,
             timestamp: now.timestamp(),
             data,
-            nonce,
+            pow,
+            transactions: vec![],
         }
     }
 
 
     fn mine_block(id: u64, timestamp: i64, previous_hash: &str, data: &str) -> (u64, String) {
-        let mut nonce = 0;
+        let mut pow = 0;
 
         loop {
-            let hash = calculate_hash(id, timestamp, previous_hash, data, nonce);
+            let hash = calculate_hash(id, timestamp, previous_hash, data, pow);
             let binary_hash = hash_to_binary(&hash);
 
             if binary_hash.starts_with(DIFFICULTY_PREFIX) {
-                println!("mined! nonce: {} hash: {}", nonce, binary_hash);
+                println!("mined! pow: {} hash: {}", pow, binary_hash);
 
-                return (nonce, hex::encode(binary_hash));
+                return (pow, hex::encode(binary_hash));
             }
 
-            nonce += 1;
+            pow += 1;
         }
     }
 }
 
-impl App {
+impl Chain {
     fn new() -> Self {
         Self { blocks: vec![] }
     }
@@ -79,15 +87,16 @@ impl App {
             timestamp: Utc::now().timestamp(),
             previous_hash: "genesis".to_string(),
             data: "genesis!".to_string(),
-            nonce: 2386,
-            hash: "7112de388aa7cf3c2ac6ddbeb3edea123d5f95d96c9d423f78c2bfbd85d21108".to_string(),
+            pow: 0,
+            hash: "6166746572206461726b".to_string(),
+            transactions: vec![],
         };
 
         self.blocks.push(genesis_block);
     }
 
     fn try_add_block(&mut self, block: Block) {
-        let latest_block = self.blocks.last().expect("there is just one block");
+        let latest_block = self.blocks.last().expect("there is no block");
 
         if self.is_block_valid(&block, &latest_block) {
             self.blocks.push(block);
@@ -104,7 +113,7 @@ impl App {
         } else if block.id != previous_block.id + 1 {
             println!("id");
             return false;
-        } else if hex::encode(calculate_hash(block.id, block.timestamp, &block.previous_hash, &block.data, block.nonce)) != block.hash {
+        } else if hex::encode(calculate_hash(block.id, block.timestamp, &block.previous_hash, &block.data, block.pow)) != block.hash {
             println!("hash is not correct");
             return false;
         }
@@ -138,7 +147,7 @@ impl App {
     }
 
 
-    fn choose_chain<'a>(&self, local: &'a Vec<Block>, remote: &'a Vec<Block>) -> &'a Vec<Block> {
+    fn choose_chain(&self, local: Vec<Block>, remote: Vec<Block>) -> Vec<Block> {
         let (local_validation, _) = self.is_chain_valid(&local);
         let (remote_validation, _) = self.is_chain_valid(&remote);
 
@@ -158,5 +167,8 @@ impl App {
     }
 }
 
-fn main() {}
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    Ok(())
+}
 
